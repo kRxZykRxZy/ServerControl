@@ -1,6 +1,8 @@
 #!/bin/bash
 
 # Test script for ServerControl
+# Note: This script uses grep/cut for JSON parsing for portability
+# For production use, consider using 'jq' for more robust JSON parsing
 
 set -e
 

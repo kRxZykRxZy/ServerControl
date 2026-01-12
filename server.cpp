@@ -116,8 +116,21 @@ void handle_client(tcp::socket socket) {
         std::getline(request, line); // consume newline after request line
         size_t content_length = 0;
         while (std::getline(request, line) && line != "\r") {
-            if (line.find("Content-Length:") == 0) {
-                content_length = std::stoul(line.substr(15));
+            // Convert to lowercase for case-insensitive comparison
+            std::string lower_line = line;
+            for (auto& c : lower_line) c = std::tolower(c);
+            
+            if (lower_line.find("content-length:") == 0) {
+                // Find the colon and skip whitespace
+                size_t colon_pos = line.find(':');
+                if (colon_pos != std::string::npos) {
+                    std::string value = line.substr(colon_pos + 1);
+                    // Skip leading whitespace
+                    size_t start = value.find_first_not_of(" \t\r\n");
+                    if (start != std::string::npos) {
+                        content_length = std::stoul(value.substr(start));
+                    }
+                }
             }
         }
         

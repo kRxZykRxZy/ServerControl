@@ -2,6 +2,7 @@
 #include <ncurses.h>
 #include <algorithm>
 #include <sstream>
+#include <climits>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -396,7 +397,13 @@ void UI::drawServerStats() {
     mvprintw(row++, 4, "Memory Usage:");
     attroff(A_BOLD);
     
-    long ramPercent = st.ramTotal > 0 ? (st.ramUsed * 100 / st.ramTotal) : 0;
+    // Prevent overflow in percentage calculation
+    long ramPercent = 0;
+    if (st.ramTotal > 0) {
+        ramPercent = (st.ramUsed > LONG_MAX / 100) 
+            ? (st.ramUsed / st.ramTotal) * 100 
+            : (st.ramUsed * 100) / st.ramTotal;
+    }
     int ramColor = ramPercent > 80 ? 2 : (ramPercent > 50 ? 3 : 1);
     
     attron(COLOR_PAIR(ramColor) | A_BOLD);

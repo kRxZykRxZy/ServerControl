@@ -54,8 +54,13 @@ std::vector<ServerConfig> Config::load() {
                             }
                         }
                     }
-                } catch (...) {
-                    // No data available yet, continue waiting
+                } catch (asio::system_error& e) {
+                    // Socket would block - no data available, continue waiting
+                    if (e.code() != asio::error::would_block) {
+                        std::cerr << "Socket error during discovery: " << e.what() << "\n";
+                    }
+                } catch (json::exception& e) {
+                    std::cerr << "JSON parse error: " << e.what() << "\n";
                 }
             }
         }
