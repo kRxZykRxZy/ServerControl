@@ -738,6 +738,244 @@ void handle_client(tcp::socket socket) {
             
             asio::write(socket, asio::buffer(http_response(json{{"logs", logs}}.dump())));
         }
+        else if(method=="GET" && path=="/system/metrics"){
+            // Advanced metrics collection
+            json metrics;
+            
+            // CPU detailed info
+            FILE* pipe = popen("lscpu | grep -E 'Model name|CPU\\(s\\)|Thread|Core'", "r");
+            char buffer[256];
+            std::vector<std::string> cpu_info;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                cpu_info.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            metrics["cpu_info"] = cpu_info;
+            
+            // Network statistics
+            pipe = popen("ss -s 2>/dev/null || netstat -s 2>/dev/null | head -20", "r");
+            std::vector<std::string> net_stats;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                net_stats.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            metrics["network_stats"] = net_stats;
+            
+            // Disk I/O
+            pipe = popen("iostat -d 2>/dev/null | tail -n +4 | head -5", "r");
+            std::vector<std::string> disk_io;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                disk_io.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            metrics["disk_io"] = disk_io;
+            
+            // Top processes by CPU
+            pipe = popen("ps aux --sort=-%cpu | head -6 | tail -5", "r");
+            std::vector<std::string> top_cpu;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                top_cpu.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            metrics["top_cpu"] = top_cpu;
+            
+            // Top processes by memory
+            pipe = popen("ps aux --sort=-%mem | head -6 | tail -5", "r");
+            std::vector<std::string> top_mem;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                top_mem.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            metrics["top_mem"] = top_mem;
+            
+            asio::write(socket, asio::buffer(http_response(metrics.dump())));
+        }
+        else if(method=="GET" && path=="/system/security-scan"){
+            // Security vulnerability scan
+            json security;
+            
+            // Check open ports
+            FILE* pipe = popen("ss -tuln 2>/dev/null || netstat -tuln 2>/dev/null | grep LISTEN", "r");
+            char buffer[256];
+            std::vector<std::string> open_ports;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                open_ports.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            security["open_ports"] = open_ports;
+            
+            // Check for failed login attempts
+            pipe = popen("grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -10", "r");
+            std::vector<std::string> failed_logins;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                failed_logins.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            security["failed_logins"] = failed_logins;
+            
+            // Check SSH configuration
+            pipe = popen("grep -E 'PermitRootLogin|PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null", "r");
+            std::vector<std::string> ssh_config;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                ssh_config.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            security["ssh_config"] = ssh_config;
+            
+            // Check firewall status
+            pipe = popen("ufw status 2>/dev/null || iptables -L -n 2>/dev/null | head -20", "r");
+            std::vector<std::string> firewall;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                firewall.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            security["firewall"] = firewall;
+            
+            asio::write(socket, asio::buffer(http_response(security.dump())));
+        }
+        else if(method=="GET" && path=="/system/network-info"){
+            // Detailed network information
+            json network;
+            
+            // Active connections
+            FILE* pipe = popen("ss -tunap 2>/dev/null | head -20", "r");
+            char buffer[256];
+            std::vector<std::string> connections;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                connections.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            network["active_connections"] = connections;
+            
+            // Routing table
+            pipe = popen("ip route", "r");
+            std::vector<std::string> routes;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                routes.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            network["routes"] = routes;
+            
+            // Interface statistics
+            pipe = popen("ip -s link", "r");
+            std::vector<std::string> if_stats;
+            while (fgets(buffer, sizeof(buffer), pipe)) {
+                if_stats.push_back(std::string(buffer).substr(0, strlen(buffer)-1));
+            }
+            pclose(pipe);
+            network["interface_stats"] = if_stats;
+            
+            asio::write(socket, asio::buffer(http_response(network.dump())));
+        }
+        else if(method=="POST" && path=="/system/backup"){
+            // Create system backup
+            try {
+                json j = json::parse(body);
+                std::string path = j.value("path", "./storage");
+                std::string backup_name = "backup_" + std::to_string(std::time(nullptr)) + ".tar.gz";
+                
+                std::string cmd = "tar -czf /tmp/" + backup_name + " " + path + " 2>&1";
+                FILE* pipe = popen(cmd.c_str(), "r");
+                char buffer[256];
+                std::string output;
+                while (fgets(buffer, sizeof(buffer), pipe)) {
+                    output += buffer;
+                }
+                int result = pclose(pipe);
+                
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", result == 0},
+                    {"backup_file", "/tmp/" + backup_name},
+                    {"output", output}
+                }.dump())));
+            } catch (const std::exception& e) {
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", false},
+                    {"error", e.what()}
+                }.dump())));
+            }
+        }
+        else if(method=="POST" && path=="/system/execute-script"){
+            // Execute saved script
+            try {
+                json j = json::parse(body);
+                std::string script_content = j["script"];
+                std::string script_file = "/tmp/script_" + std::to_string(std::time(nullptr)) + ".sh";
+                
+                // Write script to file
+                std::ofstream script(script_file);
+                script << script_content;
+                script.close();
+                
+                // Make executable
+                chmod(script_file.c_str(), 0755);
+                
+                // Execute
+                std::string output;
+                FILE* pipe = popen(script_file.c_str(), "r");
+                char buffer[256];
+                while (fgets(buffer, sizeof(buffer), pipe)) {
+                    output += buffer;
+                }
+                int result = pclose(pipe);
+                
+                // Cleanup
+                std::remove(script_file.c_str());
+                
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", result == 0},
+                    {"output", output},
+                    {"exit_code", result}
+                }.dump())));
+            } catch (const std::exception& e) {
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", false},
+                    {"error", e.what()}
+                }.dump())));
+            }
+        }
+        else if(method=="GET" && path=="/system/health-check"){
+            // Comprehensive health check
+            json health;
+            health["timestamp"] = std::time(nullptr);
+            
+            // CPU health
+            auto stats = getStats();
+            health["cpu_usage"] = stats.cpu;
+            health["cpu_healthy"] = stats.cpu < 90;
+            
+            // RAM health
+            long ram_percent = stats.ram_total > 0 ? (stats.ram_used * 100 / stats.ram_total) : 0;
+            health["ram_usage_percent"] = ram_percent;
+            health["ram_healthy"] = ram_percent < 90;
+            
+            // Disk health
+            FILE* pipe = popen("df -h / | tail -1 | awk '{print $5}' | sed 's/%//'", "r");
+            char buffer[32];
+            int disk_percent = 0;
+            if (fgets(buffer, sizeof(buffer), pipe)) {
+                disk_percent = std::atoi(buffer);
+            }
+            pclose(pipe);
+            health["disk_usage_percent"] = disk_percent;
+            health["disk_healthy"] = disk_percent < 90;
+            
+            // System load
+            std::ifstream loadavg("/proc/loadavg");
+            double load1;
+            loadavg >> load1;
+            health["load_average"] = load1;
+            health["load_healthy"] = load1 < 4.0;
+            
+            // Overall health
+            health["overall_healthy"] = 
+                health["cpu_healthy"].get<bool>() && 
+                health["ram_healthy"].get<bool>() && 
+                health["disk_healthy"].get<bool>() && 
+                health["load_healthy"].get<bool>();
+            
+            asio::write(socket, asio::buffer(http_response(health.dump())));
+        }
         else{
             asio::write(socket, asio::buffer(http_response("{}")));
         }
