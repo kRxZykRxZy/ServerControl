@@ -24,10 +24,14 @@ public:
     std::string getLogs(const Task& task);
     void killTask(const Task& task);
 
+    // ===== ADD THESE THREE HERE =====
+    const std::vector<Server>& getServers() const;
+    std::vector<Task> getTasksForServer(const Server& s) const;
+    void runCommandOnServer(const Server& s, const std::string& cmd);
+
 private:
     std::vector<Server> servers;
     std::vector<bool> selected;
-
     std::vector<Task> tasks;
 
     void execOnServer(
