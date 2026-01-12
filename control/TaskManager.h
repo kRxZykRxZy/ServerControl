@@ -1,5 +1,7 @@
 #pragma once
 #include <vector>
+#include <unordered_map>
+#include <string>
 #include "Server.h"
 #include "Task.h"
 
@@ -7,11 +9,30 @@ class TaskManager {
 public:
     TaskManager(const std::vector<Server>& servers);
 
-    void runOnSelected(const std::string& cmd,
-                       const std::vector<bool>& selected);
+    // ---- server selection ----
+    void toggleServer(size_t index);
+    const std::vector<bool>& selectedServers() const;
 
-    std::vector<Task> fetchTasks();
+    // ---- task execution ----
+    void runCommand(const std::string& cmd);
+    void runJointCommand(const std::string& cmd);
+
+    // ---- task management ----
+    void refreshTasks();
+    const std::vector<Task>& getTasks() const;
+
+    std::string getLogs(const Task& task);
+    void killTask(const Task& task);
 
 private:
     std::vector<Server> servers;
+    std::vector<bool> selected;
+
+    std::vector<Task> tasks;
+
+    void execOnServer(
+        const Server& server,
+        const std::string& cmd,
+        const std::unordered_map<std::string, std::string>& env
+    );
 };
