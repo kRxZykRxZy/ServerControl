@@ -36,20 +36,29 @@ void UI::draw() {
 }
 
 void UI::drawMain() {
-    mvprintw(0, 2, "SERVERS (ENTER = menu, ESC = quit)");
+    mvprintw(0, 2, "SERVERS (ENTER=menu, SPACE=select, ESC=quit)");
     auto& servers = tm.getServers();
     auto& tasks = tm.getTasks();
+    auto& selected = tm.selectedServers();
 
     for (int i = 0; i < servers.size(); i++) {
-        int count = 0;
+        int runningTasks = 0;
         for (auto& t : tasks)
-            if (t.server == servers[i].name &&
-                t.state == TaskState::RUNNING)
-                count++;
+            if (t.server == servers[i].name && t.state == TaskState::RUNNING)
+                runningTasks++;
+
+        auto st = tm.getServerStats(servers[i]);
 
         if (i == selectedServer) attron(A_REVERSE);
-        mvprintw(2 + i, 4, "%s | running: %d",
-                 servers[i].name.c_str(), count);
+
+        mvprintw(2 + i, 2, "[%c] %s | CPU: %5.1f%% | RAM: %ld/%ld MB | Running: %d",
+                 selected[i] ? 'X' : ' ',
+                 servers[i].name.c_str(),
+                 st.cpu,
+                 st.ramUsed,
+                 st.ramTotal,
+                 runningTasks);
+
         if (i == selectedServer) attroff(A_REVERSE);
     }
 }
