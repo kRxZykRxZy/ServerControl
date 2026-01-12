@@ -76,6 +76,27 @@ void TaskManager::runJointCommand(const std::string& cmd) {
     }
 }
 
+// ---- ACCESSORS ----
+
+const std::vector<Server>& TaskManager::getServers() const {
+    return servers;
+}
+
+std::vector<Task> TaskManager::getTasksForServer(const Server& s) const {
+    std::vector<Task> out;
+    for (const auto& t : tasks) {
+        if (t.server == s.name)
+            out.push_back(t);
+    }
+    return out;
+}
+
+void TaskManager::runCommandOnServer(
+    const Server& s,
+    const std::string& cmd
+) {
+    execOnServer(s, cmd, {});
+}
 
 // ---------------- TASK TRACKING ----------------
 
