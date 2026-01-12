@@ -156,3 +156,19 @@ void TaskManager::killTask(const Task& task) {
         }
     }
 }
+
+// ---------------- SERVER STATS ----------------
+
+TaskManager::ServerStats TaskManager::getServerStats(const Server& s) const {
+    try {
+        std::string res = HttpClient::get(s.ip, s.port, "/stats");
+        auto j = json::parse(res);
+        return {
+            j["cpu"].get<double>(),
+            j["ram_used"].get<long>(),
+            j["ram_total"].get<long>()
+        };
+    } catch (...) {
+        return {0.0, 0, 0};
+    }
+}

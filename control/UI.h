@@ -18,10 +18,12 @@ private:
         SERVER_MENU,
         SERVER_TERMINAL,
         SERVER_LOGS,
-        SERVER_KILL
+        SERVER_KILL,
+        SERVER_STATS
     } mode = Mode::MAIN;
 
     std::string inputBuffer;
+    std::vector<std::string> commandHistory;
     int selectedTask = 0;
 
     void draw();
@@ -32,4 +34,5 @@ private:
     void drawServerTerminal();
     void drawServerLogs();
     void drawServerKill();
+    void drawServerStats();
 };

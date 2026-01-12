@@ -24,10 +24,18 @@ public:
     std::string getLogs(const Task& task);
     void killTask(const Task& task);
 
-    // ===== ADD THESE THREE HERE =====
+    // ---- server access ----
     const std::vector<Server>& getServers() const;
     std::vector<Task> getTasksForServer(const Server& s) const;
     void runCommandOnServer(const Server& s, const std::string& cmd);
+    
+    // ---- server stats ----
+    struct ServerStats {
+        double cpu;
+        long ramUsed;
+        long ramTotal;
+    };
+    ServerStats getServerStats(const Server& s) const;
 
 private:
     std::vector<Server> servers;
