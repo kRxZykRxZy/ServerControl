@@ -110,20 +110,48 @@ void handle_client(tcp::socket socket) {
         std::istream request(&buf);
         std::string method, path, httpver;
         request >> method >> path >> httpver;
+        
+        // Parse headers to get Content-Length
+        std::string line;
+        std::getline(request, line); // consume newline after request line
+        size_t content_length = 0;
+        while (std::getline(request, line) && line != "\r") {
+            if (line.find("Content-Length:") == 0) {
+                content_length = std::stoul(line.substr(15));
+            }
+        }
+        
+        // Read body if present
         std::string body;
-        if(buf.size()) std::getline(request, body);
+        if (content_length > 0) {
+            // Check if body is already in buffer
+            size_t available = buf.size();
+            if (available < content_length) {
+                // Read remaining body
+                asio::read(socket, buf, asio::transfer_exactly(content_length - available));
+            }
+            std::ostringstream ss;
+            ss << &buf;
+            body = ss.str();
+            if (body.size() > content_length) {
+                body = body.substr(0, content_length);
+            }
+        }
 
         if(method=="POST" && path=="/exec"){
             json j=json::parse(body);
             std::string cmd=j["cmd"];
-            Task t; t.command=cmd; t.id=std::to_string(++task_counter);
+            std::string task_id = std::to_string(++task_counter);
+            Task t; 
+            t.command=cmd; 
+            t.id=task_id;
             {
                 std::lock_guard<std::mutex> lk(tasks_mtx);
-                tasks[t.id]=std::move(t);
-                tasks[t.id].thread = std::thread(runTask,std::ref(tasks[t.id]));
-                tasks[t.id].thread.detach();
+                tasks[task_id]=std::move(t);
+                tasks[task_id].thread = std::thread(runTask,std::ref(tasks[task_id]));
+                tasks[task_id].thread.detach();
             }
-            asio::write(socket, asio::buffer(http_response(json{{"task_id", t.id}}.dump())));
+            asio::write(socket, asio::buffer(http_response(json{{"task_id", task_id}}.dump())));
         }
         else if(method=="GET" && path=="/tasks"){
             json j = json::array();
