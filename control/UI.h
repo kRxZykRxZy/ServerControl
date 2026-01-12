@@ -2,20 +2,34 @@
 #include <vector>
 #include <string>
 #include "Server.h"
-#include "Task.h"
+#include "TaskManager.h"
 
 class UI {
 public:
-    UI(const std::vector<Server>& servers);
+    UI(TaskManager& tm);
     void run();
 
 private:
-    std::vector<Server> servers;
-    std::vector<bool> selected;
+    TaskManager& tm;
+    int selectedServer = 0;
 
-    std::string command;
+    enum class Mode {
+        MAIN,
+        SERVER_MENU,
+        SERVER_TERMINAL,
+        SERVER_LOGS,
+        SERVER_KILL
+    } mode = Mode::MAIN;
+
+    std::string inputBuffer;
+    int selectedTask = 0;
 
     void draw();
     void handleInput(int ch);
-};
 
+    void drawMain();
+    void drawServerMenu();
+    void drawServerTerminal();
+    void drawServerLogs();
+    void drawServerKill();
+};
