@@ -1,140 +1,146 @@
-// Compile: g++ server.cpp -O2 -std=c++20 -pthread -o agent
-
 #include <asio.hpp>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <fcntl.h>
-#include <iostream>
-#include <unordered_map>
 #include <thread>
 #include <mutex>
+#include <map>
+#include <vector>
+#include <string>
 #include <sstream>
+#include <iostream>
+#include <fstream>
+#include <atomic>
+#include <cstdlib>
+#include <csignal>
+#include <nlohmann/json.hpp>
+#include <chrono>
+#include <condition_variable>
 
 using asio::ip::tcp;
+using json = nlohmann::json;
 
 struct Task {
-    pid_t pid;
+    std::string id;
+    std::string command;
     std::string output;
-    bool running;
+    std::atomic<bool> running{true};
+    std::thread thread;
 };
 
-std::unordered_map<std::string, Task> tasks;
-std::mutex task_mutex;
+std::map<std::string, Task> tasks;
+std::mutex tasks_mtx;
 int task_counter = 0;
 
-std::string exec_command(const std::string& cmd, pid_t& out_pid) {
-    int pipefd[2];
-    pipe(pipefd);
+struct Stats { double cpu; long ram_used; long ram_total; };
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        dup2(pipefd[1], STDOUT_FILENO);
-        dup2(pipefd[1], STDERR_FILENO);
-        close(pipefd[0]);
-        execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
-        _exit(1);
+Stats getStats() {
+    static long lastTotal = 0, lastIdle = 0;
+    std::ifstream stat("/proc/stat");
+    std::string cpu;
+    long user, nice, system, idle;
+    stat >> cpu >> user >> nice >> system >> idle;
+    long total = user + nice + system + idle;
+    long totald = total - lastTotal;
+    long idled = idle - lastIdle;
+    lastTotal = total; lastIdle = idle;
+    double cpu_usage = totald ? (100.0*(totald - idled)/totald) : 0;
+    std::ifstream mem("/proc/meminfo");
+    long totalMem, freeMem;
+    mem.ignore(256, ':'); mem >> totalMem;
+    mem.ignore(256, ':'); mem >> freeMem;
+    return {cpu_usage, (totalMem - freeMem)/1024, totalMem/1024};
+}
+
+void runTask(Task& t) {
+    FILE* pipe = popen(t.command.c_str(), "r");
+    if(!pipe){ t.running=false; return; }
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe)) {
+        t.output += buffer;
     }
+    pclose(pipe);
+    t.running = false;
+}
 
-    close(pipefd[1]);
-    out_pid = pid;
-
+std::string http_response(const std::string& body){
     std::stringstream ss;
-    char buffer[1024];
-    ssize_t n;
-    while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
-        ss.write(buffer, n);
-    }
-    close(pipefd[0]);
-
-    waitpid(pid, nullptr, 0);
+    ss << "HTTP/1.1 200 OK\r\n"
+       << "Content-Length: " << body.size() << "\r\n"
+       << "Content-Type: application/json\r\n"
+       << "Connection: close\r\n\r\n"
+       << body;
     return ss.str();
 }
 
-std::string http_response(const std::string& body) {
-    return "HTTP/1.1 200 OK\r\nContent-Length: " +
-           std::to_string(body.size()) +
-           "\r\n\r\n" + body;
-}
+void handle_client(tcp::socket socket) {
+    try{
+        asio::streambuf buf;
+        asio::read_until(socket, buf, "\r\n\r\n");
+        std::istream request(&buf);
+        std::string method, path, httpver;
+        request >> method >> path >> httpver;
+        std::string body;
+        if(buf.size()) std::getline(request, body);
 
-void handle_request(tcp::socket socket) {
-    asio::streambuf buf;
-    asio::read_until(socket, buf, "\r\n\r\n");
-
-    std::istream request(&buf);
-    std::string method, path;
-    request >> method >> path;
-
-    if (method == "POST" && path == "/exec") {
-        std::string cmd((std::istreambuf_iterator<char>(request)), {});
-        pid_t pid;
-
-        std::thread([cmd, &pid]() {
-            std::string output = exec_command(cmd, pid);
-            std::lock_guard lock(task_mutex);
-            for (auto& [id, task] : tasks) {
-                if (task.pid == pid) {
-                    task.output = output;
-                    task.running = false;
-                }
+        if(method=="POST" && path=="/exec"){
+            json j=json::parse(body);
+            std::string cmd=j["cmd"];
+            Task t; t.command=cmd; t.id=std::to_string(++task_counter);
+            {
+                std::lock_guard<std::mutex> lk(tasks_mtx);
+                tasks[t.id]=std::move(t);
+                tasks[t.id].thread = std::thread(runTask,std::ref(tasks[t.id]));
+                tasks[t.id].thread.detach();
             }
-        }).detach();
-
-        std::lock_guard lock(task_mutex);
-        std::string id = std::to_string(++task_counter);
-        tasks[id] = {pid, "", true};
-
-        asio::write(socket, asio::buffer(http_response("{\"task_id\":\"" + id + "\"}")));
-    }
-
-    else if (method == "GET" && path == "/tasks") {
-        std::stringstream ss;
-        ss << "[";
-        std::lock_guard lock(task_mutex);
-        for (auto& [id, t] : tasks) {
-            ss << "{\"id\":\"" << id << "\",\"pid\":" << t.pid
-               << ",\"running\":" << (t.running ? "true" : "false") << "},";
+            asio::write(socket, asio::buffer(http_response(json{{"task_id", t.id}}.dump())));
         }
-        ss << "]";
-        asio::write(socket, asio::buffer(http_response(ss.str())));
-    }
-
-    else if (method == "GET" && path.rfind("/logs?id=", 0) == 0) {
-        std::string id = path.substr(9);
-        std::lock_guard lock(task_mutex);
-        asio::write(socket, asio::buffer(http_response(tasks[id].output)));
-    }
-
-    else if (method == "POST" && path.rfind("/kill?id=", 0) == 0) {
-        std::string id = path.substr(9);
-        std::lock_guard lock(task_mutex);
-        kill(tasks[id].pid, SIGKILL);
-        tasks[id].running = false;
-        asio::write(socket, asio::buffer(http_response("killed")));
-    }
-
-    socket.close();
+        else if(method=="GET" && path=="/tasks"){
+            json j = json::array();
+            std::lock_guard<std::mutex> lk(tasks_mtx);
+            for(auto& [id,t]:tasks)
+                j.push_back({{"id",id},{"running",t.running.load()},{"command",t.command}});
+            asio::write(socket, asio::buffer(http_response(j.dump())));
+        }
+        else if(method=="GET" && path.find("/logs")==0){
+            std::string id;
+            auto pos = path.find("id=");
+            if(pos!=std::string::npos) id=path.substr(pos+3);
+            std::string out;
+            std::lock_guard<std::mutex> lk(tasks_mtx);
+            if(tasks.count(id)) out=tasks[id].output;
+            asio::write(socket, asio::buffer(http_response(json{{"logs", out}}.dump())));
+        }
+        else if(method=="POST" && path.find("/kill")==0){
+            std::string id;
+            auto pos = path.find("id=");
+            if(pos!=std::string::npos) id=path.substr(pos+3);
+            std::lock_guard<std::mutex> lk(tasks_mtx);
+            if(tasks.count(id)){
+                std::thread([id](){
+                    std::string cmd="pkill -P "+id;
+                    system(cmd.c_str());
+                }).detach();
+            }
+            asio::write(socket, asio::buffer(http_response(json{{"killed",id}}.dump())));
+        }
+        else if(method=="GET" && path=="/stats"){
+            auto s=getStats();
+            asio::write(socket, asio::buffer(http_response(json{
+                {"cpu",s.cpu},{"ram_used",s.ram_used},{"ram_total",s.ram_total}
+            }.dump())));
+        }
+        else{
+            asio::write(socket, asio::buffer(http_response("{}")));
+        }
+    }catch(...){}
 }
 
-void daemonize() {
-    if (fork() > 0) exit(0);
-    setsid();
-    if (fork() > 0) exit(0);
-
-    chdir("/");
-    close(STDIN_FILENO);
-    close(STDOUT_FILENO);
-    close(STDERR_FILENO);
-}
-
-int main() {
-    daemonize();
-
-    asio::io_context io;
-    tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 9001));
-
-    while (true) {
-        tcp::socket socket(io);
-        acceptor.accept(socket);
-        std::thread(handle_request, std::move(socket)).detach();
-    }
+int main(){
+    try{
+        asio::io_context io;
+        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8080));
+        for(;;){
+            tcp::socket socket(io);
+            acceptor.accept(socket);
+            std::thread(handle_client,std::move(socket)).detach();
+        }
+    }catch(std::exception& e){ std::cerr<<e.what(); }
 }
