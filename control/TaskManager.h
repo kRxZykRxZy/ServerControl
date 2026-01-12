@@ -7,11 +7,11 @@ class TaskManager {
 public:
     TaskManager(const std::vector<Server>& servers);
 
-    void runCommand(const std::string& cmd, int serverIndex);
-    void listTasks();
-    void showLogs(const std::string& taskId, int serverIndex);
+    void runOnSelected(const std::string& cmd,
+                       const std::vector<bool>& selected);
+
+    std::vector<Task> fetchTasks();
 
 private:
     std::vector<Server> servers;
 };
-
