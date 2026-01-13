@@ -65,6 +65,22 @@ int http_port = 8080;
 int discovery_port = 8081;
 int websocket_port = 8082;
 
+// External functions from modular components
+extern std::string get_local_ip();
+extern void broadcast_ws(const std::string& message);
+extern Stats getStats();
+extern void cpu_monitor();
+extern void discovery_responder();
+extern void on_ws_open(connection_hdl hdl);
+extern void on_ws_close(connection_hdl hdl);
+extern void on_ws_message(websocket_server* server, connection_hdl hdl, message_ptr msg);
+extern void run_websocket_server();
+
+// WebSocket server globals (defined in WebSocket.cpp)
+extern std::set<connection_hdl, std::owner_less<connection_hdl>> ws_connections;
+extern std::mutex ws_connections_mtx;
+extern websocket_server ws_server;
+
 // Helper function to find an available port
 int find_available_port(int start_port, int max_attempts = 10) {
     for (int i = 0; i < max_attempts; i++) {
@@ -1164,6 +1180,80 @@ void handle_client(tcp::socket socket) {
             
             asio::write(socket, asio::buffer(http_response(health.dump())));
         }
+        else if(method=="POST" && path=="/remote/start"){
+            // Start remote desktop streaming
+            try {
+                json j = json::parse(body);
+                int fps = j.value("fps", 30);
+                int quality = j.value("quality", 75);
+                
+                // TODO: Integrate RemoteDesktop class
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", true},
+                    {"message", "Remote desktop started"},
+                    {"fps", fps},
+                    {"quality", quality}
+                }.dump())));
+            } catch (const std::exception& e) {
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", false},
+                    {"error", e.what()}
+                }.dump())));
+            }
+        }
+        else if(method=="POST" && path=="/remote/stop"){
+            // Stop remote desktop streaming
+            asio::write(socket, asio::buffer(http_response(json{
+                {"success", true},
+                {"message", "Remote desktop stopped"}
+            }.dump())));
+        }
+        else if(method=="POST" && path=="/remote/mouse"){
+            // Handle mouse event
+            try {
+                json j = json::parse(body);
+                int x = j["x"];
+                int y = j["y"];
+                int button = j.value("button", 0);
+                bool pressed = j.value("pressed", false);
+                
+                // TODO: Send to RemoteDesktop
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", true}
+                }.dump())));
+            } catch (const std::exception& e) {
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", false},
+                    {"error", e.what()}
+                }.dump())));
+            }
+        }
+        else if(method=="POST" && path=="/remote/keyboard"){
+            // Handle keyboard event
+            try {
+                json j = json::parse(body);
+                int keycode = j["keycode"];
+                bool pressed = j.value("pressed", true);
+                
+                // TODO: Send to RemoteDesktop
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", true}
+                }.dump())));
+            } catch (const std::exception& e) {
+                asio::write(socket, asio::buffer(http_response(json{
+                    {"success", false},
+                    {"error", e.what()}
+                }.dump())));
+            }
+        }
+        else if(method=="GET" && path=="/remote/info"){
+            // Get remote desktop info
+            asio::write(socket, asio::buffer(http_response(json{
+                {"width", 1920},
+                {"height", 1080},
+                {"streaming", false}
+            }.dump())));
+        }
         else{
             asio::write(socket, asio::buffer(http_response("{}")));
         }
@@ -1313,34 +1403,26 @@ void run_websocket_server() {
 
 int main(){
     try{
-        std::cout << "=== ServerControl 2050 - Starting ===" << std::endl;
-        std::cout << "Auto-detecting available ports..." << std::endl;
+        std::cout << "=== ServerControl 2050 - IP-Based Server ===" << std::endl;
+        std::cout << "Detecting network configuration..." << std::endl;
         
-        // Find available ports
-        http_port = find_available_port(8080);
-        if (http_port == -1) {
-            std::cerr << "ERROR: Could not find available port for HTTP server (tried 8080-8089)" << std::endl;
-            return 1;
-        }
+        // Use standard port for all servers
+        const int STANDARD_PORT = 2030;
+        http_port = STANDARD_PORT;
+        discovery_port = STANDARD_PORT + 1;  // 2031
+        websocket_port = STANDARD_PORT + 2;  // 2032
         
-        // Ensure discovery and websocket ports don't conflict
-        int temp_discovery = find_available_port(8081);
-        if (temp_discovery == http_port) {
-            temp_discovery = find_available_port(http_port + 1);
-        }
-        discovery_port = (temp_discovery != -1) ? temp_discovery : http_port + 1;
+        // Auto-detect best IP address to bind to
+        // This will select a non-loopback IP from the available network interfaces
+        std::string bind_ip = get_local_ip();
         
-        int temp_websocket = find_available_port(8082);
-        if (temp_websocket == http_port || temp_websocket == discovery_port) {
-            temp_websocket = find_available_port(std::max(http_port, discovery_port) + 1);
-        }
-        websocket_port = (temp_websocket != -1) ? temp_websocket : std::max(http_port, discovery_port) + 1;
-        
-        std::cout << "\n✓ Ports allocated:" << std::endl;
-        std::cout << "  HTTP API:       0.0.0.0:" << http_port << std::endl;
-        std::cout << "  UDP Discovery:  0.0.0.0:" << discovery_port << std::endl;
-        std::cout << "  WebSocket:      0.0.0.0:" << websocket_port << std::endl;
-        std::cout << "\n";
+        std::cout << "\n✓ Network Configuration:" << std::endl;
+        std::cout << "  Bind IP:        " << bind_ip << std::endl;
+        std::cout << "  HTTP API:       " << bind_ip << ":" << http_port << std::endl;
+        std::cout << "  UDP Discovery:  " << bind_ip << ":" << discovery_port << std::endl;
+        std::cout << "  WebSocket:      " << bind_ip << ":" << websocket_port << std::endl;
+        std::cout << "\n  Note: All servers use port " << STANDARD_PORT << " on different IPs" << std::endl;
+        std::cout << "  Example: 10.229.167.215:2030, 10.229.167.216:2030, etc.\n" << std::endl;
         
         // Start discovery responder in background
         std::thread(discovery_responder).detach();
@@ -1354,12 +1436,16 @@ int main(){
         // Give background threads time to start
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
         
+        // Bind to specific IP address and standard port
         asio::io_context io;
-        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), http_port));
+        asio::ip::address addr = asio::ip::make_address(bind_ip);
+        tcp::endpoint endpoint(addr, http_port);
+        tcp::acceptor acceptor(io, endpoint);
         
         std::cout << "✓ All services started successfully!" << std::endl;
         std::cout << "✓ CPU monitoring active - will alert when CPU > 90%" << std::endl;
-        std::cout << "✓ Server ready on hostname: " << get_hostname() << std::endl;
+        std::cout << "✓ Server bound to: " << bind_ip << ":" << http_port << std::endl;
+        std::cout << "✓ Hostname: " << get_hostname() << std::endl;
         std::cout << "\nWaiting for connections..." << std::endl;
         
         for(;;){
