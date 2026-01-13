@@ -16,11 +16,41 @@
 #include <unistd.h>
 #include <filesystem>
 #include <iomanip>
+#include <set>
+#include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/server.hpp>
 
 using asio::ip::tcp;
 using asio::ip::udp;
 using json = nlohmann::json;
 namespace fs = std::filesystem;
+
+typedef websocketpp::server<websocketpp::config::asio> websocket_server;
+typedef websocket_server::message_ptr message_ptr;
+using websocketpp::connection_hdl;
+
+// Helper function for string ends_with (C++17 compatible)
+bool ends_with(const std::string& str, const std::string& suffix) {
+    if (suffix.length() > str.length()) return false;
+    return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
+}
+
+// WebSocket connections management
+std::set<connection_hdl, std::owner_less<connection_hdl>> ws_connections;
+std::mutex ws_connections_mtx;
+websocket_server ws_server;
+
+// Broadcast message to all WebSocket connections
+void broadcast_ws(const std::string& message) {
+    std::lock_guard<std::mutex> lock(ws_connections_mtx);
+    for (auto hdl : ws_connections) {
+        try {
+            ws_server.send(hdl, message, websocketpp::frame::opcode::text);
+        } catch (...) {
+            // Connection closed, will be cleaned up later
+        }
+    }
+}
 
 struct Task {
     std::string id;
@@ -79,13 +109,44 @@ Stats getStats() {
 
 void runTask(Task& t) {
     FILE* pipe = popen(t.command.c_str(), "r");
-    if(!pipe){ t.running=false; return; }
+    if(!pipe){ 
+        t.running=false; 
+        json msg = {{"type", "task_complete"}, {"task_id", t.id}, {"exit_code", -1}};
+        broadcast_ws(msg.dump());
+        return; 
+    }
+    
+    // Send task started event
+    json start_msg = {{"type", "task_start"}, {"task_id", t.id}, {"command", t.command}};
+    broadcast_ws(start_msg.dump());
+    
     char buffer[128];
     while (fgets(buffer, sizeof(buffer), pipe)) {
-        t.output += buffer;
+        std::string output_chunk(buffer);
+        t.output += output_chunk;
+        
+        // Stream output in real-time via WebSocket
+        json output_msg = {
+            {"type", "task_output"}, 
+            {"task_id", t.id}, 
+            {"output", output_chunk},
+            {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count()}
+        };
+        broadcast_ws(output_msg.dump());
     }
-    pclose(pipe);
+    
+    int exit_code = pclose(pipe);
     t.running = false;
+    
+    // Send task completed event
+    json complete_msg = {
+        {"type", "task_complete"}, 
+        {"task_id", t.id}, 
+        {"exit_code", WEXITSTATUS(exit_code)}
+    };
+    broadcast_ws(complete_msg.dump());
 }
 
 std::string http_response(const std::string& body){
@@ -356,11 +417,12 @@ void handle_client(tcp::socket socket) {
             }
         }
         else if(method=="POST" && path=="/files/upload"){
-            // Upload a file
+            // Upload a file with intelligent auto-install detection
             try {
                 json j = json::parse(body);
                 std::string filename = j["filename"];
                 std::string content_b64 = j["content"];
+                bool auto_install = j.value("auto_install", false);
                 
                 std::string storage_path = "./storage";
                 if (!fs::exists(storage_path)) {
@@ -374,10 +436,67 @@ void handle_client(tcp::socket socket) {
                 file.write(content.c_str(), content.size());
                 file.close();
                 
-                asio::write(socket, asio::buffer(http_response(json{
+                json response = {
                     {"success", true},
-                    {"message", "File uploaded successfully"}
-                }.dump())));
+                    {"message", "File uploaded successfully"},
+                    {"filename", filename}
+                };
+                
+                // Auto-install detection based on file extension
+                if (auto_install) {
+                    std::string install_cmd;
+                    std::string file_type;
+                    
+                    // Detect file type and determine installation command
+                    if (ends_with(filename, ".deb")) {
+                        install_cmd = "sudo dpkg -i " + filepath;
+                        file_type = "Debian Package";
+                    } else if (ends_with(filename, ".rpm")) {
+                        install_cmd = "sudo rpm -i " + filepath;
+                        file_type = "RPM Package";
+                    } else if (ends_with(filename, ".AppImage")) {
+                        install_cmd = "chmod +x " + filepath;
+                        file_type = "AppImage";
+                    } else if (ends_with(filename, ".sh")) {
+                        install_cmd = "chmod +x " + filepath + " && " + filepath;
+                        file_type = "Shell Script";
+                    } else if (ends_with(filename, ".tar.gz") || ends_with(filename, ".tgz")) {
+                        install_cmd = "tar -xzf " + filepath + " -C " + storage_path;
+                        file_type = "Tarball";
+                    } else if (ends_with(filename, ".zip")) {
+                        install_cmd = "unzip " + filepath + " -d " + storage_path;
+                        file_type = "ZIP Archive";
+                    } else if (ends_with(filename, ".py")) {
+                        // Check if it's a Python package setup file
+                        install_cmd = "pip3 install " + filepath;
+                        file_type = "Python Package";
+                    }
+                    
+                    if (!install_cmd.empty()) {
+                        // Execute installation in background
+                        std::string task_id = std::to_string(++task_counter);
+                        Task t;
+                        t.command = install_cmd;
+                        t.id = task_id;
+                        
+                        {
+                            std::lock_guard<std::mutex> lk(tasks_mtx);
+                            tasks[task_id] = std::move(t);
+                            tasks[task_id].thread = std::thread(runTask, std::ref(tasks[task_id]));
+                            tasks[task_id].thread.detach();
+                        }
+                        
+                        response["auto_install"] = true;
+                        response["file_type"] = file_type;
+                        response["install_task_id"] = task_id;
+                        response["install_command"] = install_cmd;
+                    } else {
+                        response["auto_install"] = false;
+                        response["message"] = "File uploaded but auto-install not supported for this file type";
+                    }
+                }
+                
+                asio::write(socket, asio::buffer(http_response(response.dump())));
             } catch (const std::exception& e) {
                 asio::write(socket, asio::buffer(http_response(json{
                     {"success", false},
@@ -997,7 +1116,8 @@ void discovery_responder() {
                 json response = {
                     {"type", "SERVER_RESPONSE"},
                     {"hostname", get_hostname()},
-                    {"port", 8080}
+                    {"port", 8080},
+                    {"ws_port", 8082}
                 };
                 std::string resp_str = response.dump();
                 socket.send_to(asio::buffer(resp_str), remote_endpoint);
@@ -1008,14 +1128,119 @@ void discovery_responder() {
     }
 }
 
+// CPU monitoring thread - broadcasts alerts when CPU > 90%
+void cpu_monitor() {
+    double last_alert_time = 0;
+    const double alert_cooldown = 60.0; // Alert at most once per minute
+    
+    while(true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        
+        auto stats = getStats();
+        auto now = std::chrono::system_clock::now();
+        auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()
+        ).count();
+        
+        // Broadcast stats update
+        json stats_msg = {
+            {"type", "stats_update"},
+            {"cpu", stats.cpu},
+            {"ram_used", stats.ram_used},
+            {"ram_total", stats.ram_total},
+            {"timestamp", timestamp}
+        };
+        broadcast_ws(stats_msg.dump());
+        
+        // Check for CPU alert (>90%)
+        if (stats.cpu > 90.0) {
+            double current_time = timestamp / 1000.0;
+            if (current_time - last_alert_time > alert_cooldown) {
+                json alert_msg = {
+                    {"type", "cpu_alert"},
+                    {"cpu", stats.cpu},
+                    {"hostname", get_hostname()},
+                    {"message", "CPU usage exceeded 90%!"},
+                    {"timestamp", timestamp}
+                };
+                broadcast_ws(alert_msg.dump());
+                last_alert_time = current_time;
+                
+                // Also log to console
+                std::cout << "⚠️  CPU ALERT: " << stats.cpu << "% on " << get_hostname() << std::endl;
+            }
+        }
+    }
+}
+
+// WebSocket connection handlers
+void on_ws_open(connection_hdl hdl) {
+    std::lock_guard<std::mutex> lock(ws_connections_mtx);
+    ws_connections.insert(hdl);
+    std::cout << "WebSocket client connected. Total clients: " << ws_connections.size() << std::endl;
+}
+
+void on_ws_close(connection_hdl hdl) {
+    std::lock_guard<std::mutex> lock(ws_connections_mtx);
+    ws_connections.erase(hdl);
+    std::cout << "WebSocket client disconnected. Total clients: " << ws_connections.size() << std::endl;
+}
+
+void on_ws_message(websocket_server* server, connection_hdl hdl, message_ptr msg) {
+    // Handle incoming WebSocket messages (if needed for bidirectional communication)
+    try {
+        json j = json::parse(msg->get_payload());
+        std::string type = j["type"];
+        
+        if (type == "ping") {
+            json pong = {{"type", "pong"}, {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()
+            ).count()}};
+            server->send(hdl, pong.dump(), websocketpp::frame::opcode::text);
+        }
+    } catch (...) {
+        // Invalid message, ignore
+    }
+}
+
+void run_websocket_server() {
+    try {
+        ws_server.set_access_channels(websocketpp::log::alevel::none);
+        ws_server.set_error_channels(websocketpp::log::elevel::none);
+        
+        ws_server.init_asio();
+        ws_server.set_reuse_addr(true);
+        
+        ws_server.set_open_handler(&on_ws_open);
+        ws_server.set_close_handler(&on_ws_close);
+        ws_server.set_message_handler(std::bind(&on_ws_message, &ws_server, std::placeholders::_1, std::placeholders::_2));
+        
+        ws_server.listen(8082);
+        ws_server.start_accept();
+        
+        std::cout << "WebSocket server started on port 8082\n";
+        
+        ws_server.run();
+    } catch (std::exception& e) {
+        std::cerr << "WebSocket server error: " << e.what() << std::endl;
+    }
+}
+
 int main(){
     try{
         // Start discovery responder in background
         std::thread(discovery_responder).detach();
         
+        // Start CPU monitoring thread
+        std::thread(cpu_monitor).detach();
+        
+        // Start WebSocket server in background
+        std::thread(run_websocket_server).detach();
+        
         asio::io_context io;
         tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8080));
-        std::cout << "Server started on port 8080 (HTTP) and 8081 (Discovery)\n";
+        std::cout << "Server started on port 8080 (HTTP), 8081 (Discovery), and 8082 (WebSocket)\n";
+        std::cout << "CPU monitoring active - will alert when CPU > 90%\n";
         for(;;){
             tcp::socket socket(io);
             acceptor.accept(socket);
