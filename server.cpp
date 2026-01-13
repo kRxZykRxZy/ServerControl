@@ -65,21 +65,9 @@ int http_port = 8080;
 int discovery_port = 8081;
 int websocket_port = 8082;
 
-// External functions from modular components
-extern std::string get_local_ip();
-extern void broadcast_ws(const std::string& message);
-extern Stats getStats();
-extern void cpu_monitor();
-extern void discovery_responder();
-extern void on_ws_open(connection_hdl hdl);
-extern void on_ws_close(connection_hdl hdl);
-extern void on_ws_message(websocket_server* server, connection_hdl hdl, message_ptr msg);
-extern void run_websocket_server();
-
-// WebSocket server globals (defined in WebSocket.cpp)
-extern std::set<connection_hdl, std::owner_less<connection_hdl>> ws_connections;
-extern std::mutex ws_connections_mtx;
-extern websocket_server ws_server;
+// Forward declarations
+struct Stats;
+std::string get_local_ip();
 
 // Helper function to find an available port
 int find_available_port(int start_port, int max_attempts = 10) {
@@ -96,6 +84,23 @@ int find_available_port(int start_port, int max_attempts = 10) {
         }
     }
     return -1; // No available port found
+}
+
+// Get local IP address (non-loopback)
+std::string get_local_ip() {
+    try {
+        asio::io_context io_context;
+        udp::resolver resolver(io_context);
+        udp::resolver::results_type endpoints = resolver.resolve(udp::v4(), asio::ip::host_name(), "");
+        
+        for (const auto& endpoint : endpoints) {
+            auto addr = endpoint.endpoint().address();
+            if (addr.is_v4() && !addr.is_loopback()) {
+                return addr.to_string();
+            }
+        }
+    } catch (...) {}
+    return "127.0.0.1";  // Fallback to localhost
 }
 
 // WebSocket connections management
