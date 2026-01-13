@@ -35,6 +35,28 @@ bool ends_with(const std::string& str, const std::string& suffix) {
     return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
 }
 
+// Global port configuration
+int http_port = 8080;
+int discovery_port = 8081;
+int websocket_port = 8082;
+
+// Helper function to find an available port
+int find_available_port(int start_port, int max_attempts = 10) {
+    for (int i = 0; i < max_attempts; i++) {
+        int test_port = start_port + i;
+        try {
+            asio::io_context test_io;
+            tcp::acceptor test_acceptor(test_io, tcp::endpoint(tcp::v4(), test_port));
+            test_acceptor.close();
+            return test_port;
+        } catch (...) {
+            // Port in use, try next
+            continue;
+        }
+    }
+    return -1; // No available port found
+}
+
 // WebSocket connections management
 std::set<connection_hdl, std::owner_less<connection_hdl>> ws_connections;
 std::mutex ws_connections_mtx;
@@ -1104,7 +1126,9 @@ void handle_client(tcp::socket socket) {
 void discovery_responder() {
     try {
         asio::io_context io;
-        udp::socket socket(io, udp::endpoint(udp::v4(), 8081));
+        udp::socket socket(io, udp::endpoint(udp::v4(), discovery_port));
+        
+        std::cout << "UDP Discovery listening on port " << discovery_port << "\n";
         
         for(;;) {
             char recv_buf[128];
@@ -1116,8 +1140,9 @@ void discovery_responder() {
                 json response = {
                     {"type", "SERVER_RESPONSE"},
                     {"hostname", get_hostname()},
-                    {"port", 8080},
-                    {"ws_port", 8082}
+                    {"port", http_port},
+                    {"ws_port", websocket_port},
+                    {"discovery_port", discovery_port}
                 };
                 std::string resp_str = response.dump();
                 socket.send_to(asio::buffer(resp_str), remote_endpoint);
@@ -1215,10 +1240,23 @@ void run_websocket_server() {
         ws_server.set_close_handler(&on_ws_close);
         ws_server.set_message_handler(std::bind(&on_ws_message, &ws_server, std::placeholders::_1, std::placeholders::_2));
         
-        ws_server.listen(8082);
-        ws_server.start_accept();
-        
-        std::cout << "WebSocket server started on port 8082\n";
+        // Try to listen on the configured port
+        bool listening = false;
+        for (int attempt = 0; attempt < 10 && !listening; attempt++) {
+            try {
+                ws_server.listen(websocket_port);
+                ws_server.start_accept();
+                listening = true;
+                std::cout << "WebSocket server started on port " << websocket_port << "\n";
+            } catch (std::exception& e) {
+                if (attempt < 9) {
+                    websocket_port++;
+                    std::cout << "Port in use, trying port " << websocket_port << "\n";
+                } else {
+                    throw;
+                }
+            }
+        }
         
         ws_server.run();
     } catch (std::exception& e) {
@@ -1228,6 +1266,35 @@ void run_websocket_server() {
 
 int main(){
     try{
+        std::cout << "=== ServerControl 2050 - Starting ===" << std::endl;
+        std::cout << "Auto-detecting available ports..." << std::endl;
+        
+        // Find available ports
+        http_port = find_available_port(8080);
+        if (http_port == -1) {
+            std::cerr << "ERROR: Could not find available port for HTTP server (tried 8080-8089)" << std::endl;
+            return 1;
+        }
+        
+        // Ensure discovery and websocket ports don't conflict
+        int temp_discovery = find_available_port(8081);
+        if (temp_discovery == http_port) {
+            temp_discovery = find_available_port(http_port + 1);
+        }
+        discovery_port = (temp_discovery != -1) ? temp_discovery : http_port + 1;
+        
+        int temp_websocket = find_available_port(8082);
+        if (temp_websocket == http_port || temp_websocket == discovery_port) {
+            temp_websocket = find_available_port(std::max(http_port, discovery_port) + 1);
+        }
+        websocket_port = (temp_websocket != -1) ? temp_websocket : std::max(http_port, discovery_port) + 1;
+        
+        std::cout << "\n✓ Ports allocated:" << std::endl;
+        std::cout << "  HTTP API:       0.0.0.0:" << http_port << std::endl;
+        std::cout << "  UDP Discovery:  0.0.0.0:" << discovery_port << std::endl;
+        std::cout << "  WebSocket:      0.0.0.0:" << websocket_port << std::endl;
+        std::cout << "\n";
+        
         // Start discovery responder in background
         std::thread(discovery_responder).detach();
         
@@ -1237,14 +1304,24 @@ int main(){
         // Start WebSocket server in background
         std::thread(run_websocket_server).detach();
         
+        // Give background threads time to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        
         asio::io_context io;
-        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 8080));
-        std::cout << "Server started on port 8080 (HTTP), 8081 (Discovery), and 8082 (WebSocket)\n";
-        std::cout << "CPU monitoring active - will alert when CPU > 90%\n";
+        tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), http_port));
+        
+        std::cout << "✓ All services started successfully!" << std::endl;
+        std::cout << "✓ CPU monitoring active - will alert when CPU > 90%" << std::endl;
+        std::cout << "✓ Server ready on hostname: " << get_hostname() << std::endl;
+        std::cout << "\nWaiting for connections..." << std::endl;
+        
         for(;;){
             tcp::socket socket(io);
             acceptor.accept(socket);
             std::thread(handle_client,std::move(socket)).detach();
         }
-    }catch(std::exception& e){ std::cerr<<e.what(); }
+    }catch(std::exception& e){ 
+        std::cerr << "FATAL ERROR: " << e.what() << std::endl;
+        return 1;
+    }
 }
