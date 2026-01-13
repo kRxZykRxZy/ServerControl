@@ -1,5 +1,3 @@
-# Build Windows executables and upload them as artifacts
-# Trigger: push to main and manual workflow_dispatch
 on:
   push:
     branches: [ "main" ]
