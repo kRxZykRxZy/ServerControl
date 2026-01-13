@@ -17,6 +17,8 @@
 #include <filesystem>
 #include <iomanip>
 #include <set>
+#include <algorithm>
+#include <regex>
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
 
@@ -33,6 +35,29 @@ using websocketpp::connection_hdl;
 bool ends_with(const std::string& str, const std::string& suffix) {
     if (suffix.length() > str.length()) return false;
     return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
+}
+
+// Sanitize filename to prevent path traversal and command injection
+std::string sanitize_filename(const std::string& filename) {
+    // Remove any path components (../ or /)
+    std::string safe_name = filename;
+    size_t last_slash = safe_name.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        safe_name = safe_name.substr(last_slash + 1);
+    }
+    
+    // Only allow alphanumeric, dots, dashes, underscores
+    std::regex valid_pattern("^[a-zA-Z0-9._-]+$");
+    if (!std::regex_match(safe_name, valid_pattern)) {
+        return ""; // Invalid filename
+    }
+    
+    // Prevent .., ., or hidden files
+    if (safe_name == "." || safe_name == ".." || safe_name[0] == '.') {
+        return "";
+    }
+    
+    return safe_name;
 }
 
 // Global port configuration
@@ -442,16 +467,36 @@ void handle_client(tcp::socket socket) {
             // Upload a file with intelligent auto-install detection
             try {
                 json j = json::parse(body);
+                
+                // Validate required fields
+                if (!j.contains("filename") || !j.contains("content")) {
+                    asio::write(socket, asio::buffer(http_response(json{
+                        {"success", false},
+                        {"error", "Missing required fields: filename and content"}
+                    }.dump())));
+                    return;
+                }
+                
                 std::string filename = j["filename"];
                 std::string content_b64 = j["content"];
                 bool auto_install = j.value("auto_install", false);
+                
+                // Sanitize filename to prevent path traversal and injection
+                std::string safe_filename = sanitize_filename(filename);
+                if (safe_filename.empty()) {
+                    asio::write(socket, asio::buffer(http_response(json{
+                        {"success", false},
+                        {"error", "Invalid filename. Only alphanumeric, dots, dashes, and underscores allowed."}
+                    }.dump())));
+                    return;
+                }
                 
                 std::string storage_path = "./storage";
                 if (!fs::exists(storage_path)) {
                     fs::create_directories(storage_path);
                 }
                 
-                std::string filepath = storage_path + "/" + filename;
+                std::string filepath = storage_path + "/" + safe_filename;
                 std::string content = base64_decode(content_b64);
                 
                 std::ofstream file(filepath, std::ios::binary);
@@ -461,7 +506,7 @@ void handle_client(tcp::socket socket) {
                 json response = {
                     {"success", true},
                     {"message", "File uploaded successfully"},
-                    {"filename", filename}
+                    {"filename", safe_filename}
                 };
                 
                 // Auto-install detection based on file extension
@@ -469,30 +514,32 @@ void handle_client(tcp::socket socket) {
                     std::string install_cmd;
                     std::string file_type;
                     
+                    // Use the safe filepath in commands (already sanitized)
+                    // Shell quoting for extra safety
+                    std::string quoted_path = "'" + filepath + "'";
+                    
                     // Detect file type and determine installation command
-                    if (ends_with(filename, ".deb")) {
-                        install_cmd = "sudo dpkg -i " + filepath;
+                    if (ends_with(safe_filename, ".deb")) {
+                        install_cmd = "sudo dpkg -i " + quoted_path;
                         file_type = "Debian Package";
-                    } else if (ends_with(filename, ".rpm")) {
-                        install_cmd = "sudo rpm -i " + filepath;
+                    } else if (ends_with(safe_filename, ".rpm")) {
+                        install_cmd = "sudo rpm -i " + quoted_path;
                         file_type = "RPM Package";
-                    } else if (ends_with(filename, ".AppImage")) {
-                        install_cmd = "chmod +x " + filepath;
+                    } else if (ends_with(safe_filename, ".AppImage")) {
+                        install_cmd = "chmod +x " + quoted_path;
                         file_type = "AppImage";
-                    } else if (ends_with(filename, ".sh")) {
-                        install_cmd = "chmod +x " + filepath + " && " + filepath;
+                    } else if (ends_with(safe_filename, ".sh")) {
+                        install_cmd = "chmod +x " + quoted_path + " && " + quoted_path;
                         file_type = "Shell Script";
-                    } else if (ends_with(filename, ".tar.gz") || ends_with(filename, ".tgz")) {
-                        install_cmd = "tar -xzf " + filepath + " -C " + storage_path;
+                    } else if (ends_with(safe_filename, ".tar.gz") || ends_with(safe_filename, ".tgz")) {
+                        install_cmd = "tar -xzf " + quoted_path + " -C " + storage_path;
                         file_type = "Tarball";
-                    } else if (ends_with(filename, ".zip")) {
-                        install_cmd = "unzip " + filepath + " -d " + storage_path;
+                    } else if (ends_with(safe_filename, ".zip")) {
+                        install_cmd = "unzip " + quoted_path + " -d " + storage_path;
                         file_type = "ZIP Archive";
-                    } else if (ends_with(filename, ".py")) {
-                        // Check if it's a Python package setup file
-                        install_cmd = "pip3 install " + filepath;
-                        file_type = "Python Package";
                     }
+                    // Removed .py auto-install due to security risk
+                    // Python files should be manually inspected before execution
                     
                     if (!install_cmd.empty()) {
                         // Execute installation in background
