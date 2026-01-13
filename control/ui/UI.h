@@ -2,8 +2,8 @@
 #include <vector>
 #include <string>
 #include <map>
-#include "Server.h"
-#include "TaskManager.h"
+#include "../network/Server.h"
+#include "../core/TaskManager.h"
 
 class UI {
 public:

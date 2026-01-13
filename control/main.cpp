@@ -1,6 +1,6 @@
-#include "Config.h"
-#include "UI.h"
-#include "TaskManager.h"
+#include "config/Config.h"
+#include "ui/UI.h"
+#include "core/TaskManager.h"
 
 int main() {
     auto cfg = Config::load();

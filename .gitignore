@@ -33,3 +33,6 @@ storage/
 
 # Test artifacts
 test_websocket.sh
+
+# External libraries (users should install via package manager)
+include/

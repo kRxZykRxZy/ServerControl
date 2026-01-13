@@ -1,5 +1,5 @@
 #include "TaskManager.h"
-#include "HttpClient.h"
+#include "../http/HttpClient.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <sstream>
