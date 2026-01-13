@@ -1,6 +1,6 @@
 # Compiled binaries
-server
-control/control
+/server
+/control/control
 *.o
 *.out
 *.exe
