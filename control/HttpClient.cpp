@@ -6,22 +6,42 @@ using asio::ip::tcp;
 
 static std::string request(const std::string& req,
                            const std::string& ip, int port) {
-    asio::io_context io;
-    tcp::socket socket(io);
-    socket.connect(tcp::endpoint(asio::ip::make_address(ip), port));
-    asio::write(socket, asio::buffer(req));
+    try {
+        asio::io_context io;
+        tcp::socket socket(io);
+        socket.connect(tcp::endpoint(asio::ip::make_address(ip), port));
+        asio::write(socket, asio::buffer(req));
 
-    asio::streambuf buf;
-    asio::read(socket, buf, asio::transfer_all());
-
-    std::istream is(&buf);
-    std::string line, body;
-    while (std::getline(is, line)) {
-        if (line == "\r") break;
+        asio::streambuf buf;
+        asio::error_code ec;
+        
+        // Read until end of headers
+        asio::read_until(socket, buf, "\r\n\r\n", ec);
+        
+        // Read the response body
+        std::istream is(&buf);
+        std::string line, body;
+        
+        // Skip headers
+        while (std::getline(is, line) && line != "\r") {}
+        
+        // Read remaining content from buffer
+        std::ostringstream ss;
+        ss << &buf;
+        body = ss.str();
+        
+        // Try to read more if socket is still open
+        asio::read(socket, buf, asio::transfer_all(), ec);
+        if (!ec || ec == asio::error::eof) {
+            ss.str("");
+            ss << &buf;
+            body += ss.str();
+        }
+        
+        return body;
+    } catch (...) {
+        return "{}";
     }
-    while (std::getline(is, line))
-        body += line + "\n";
-    return body;
 }
 
 std::string HttpClient::post(const std::string& ip, int port,

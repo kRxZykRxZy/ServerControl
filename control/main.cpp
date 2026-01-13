@@ -1,5 +1,6 @@
 #include "Config.h"
 #include "UI.h"
+#include "TaskManager.h"
 
 int main() {
     auto cfg = Config::load();
@@ -8,6 +9,7 @@ int main() {
     for (auto& c : cfg)
         servers.push_back({c.name, c.ip, c.port});
 
-    UI ui(servers);
+    TaskManager tm(servers);
+    UI ui(tm);
     ui.run();
 }
