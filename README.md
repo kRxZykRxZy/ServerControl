@@ -1,17 +1,27 @@
 # ⚡ ServerControl 2050 - Quantum Server Orchestration Nexus
 
-A futuristic, next-generation server management system with AI-powered auto-discovery, holographic file systems, and complete remote system control capabilities.
+A futuristic, next-generation server management system with **real-time WebSocket streaming**, AI-powered auto-discovery, holographic file systems, and complete remote system control capabilities.
 
 ## 🚀 Overview
 
-ServerControl 2050 is not just a server management tool - it's a complete quantum-grade orchestration platform that gives you god-mode access to your entire server infrastructure through an intuitive terminal interface with 2050-era design aesthetics.
+ServerControl 2050 is not just a server management tool - it's a complete quantum-grade orchestration platform that gives you god-mode access to your entire server infrastructure through an intuitive terminal interface with 2050-era design aesthetics. **Now with live WebSocket streaming for millisecond-precision monitoring!**
 
 ## ✨ Revolutionary Features
 
+### 🌐 **Live WebSocket Streaming** ⚡ NEW!
+- **Real-time terminal output** - See command execution live as it happens, just like Vercel logs
+- **Millisecond-precision timestamps** - Every output chunk timestamped to the millisecond
+- **Live stats broadcasting** - CPU, RAM, and system metrics updated every second
+- **CPU Alert System** - Instant notifications when CPU exceeds 90% on any server
+- **Bi-directional communication** - WebSocket enables instant server responses
+- **Zero-latency updates** - No polling delays, pure push-based streaming
+
 ### 🔍 **Neural Auto-Discovery**
 - Quantum-instant server detection via UDP broadcast
+- **Scans entire local network automatically**
 - Zero configuration required
 - Self-organizing network topology
+- Discovers servers at any IP (e.g., 10.92.32.x:8080)
 - Automatic failover to manual config
 
 ### 🎨 **Futuristic Holographic UI**
@@ -21,7 +31,7 @@ ServerControl 2050 is not just a server management tool - it's a complete quantu
 - Animated progress bars and live stats
 - Multi-dimensional server visualization
 
-### 📁 **Holographic File System**
+### 📁 **Holographic File System with Smart Install** ⚡ NEW!
 Complete file management with an integrated nano-editor:
 - **Quantum File Explorer** - Browse server files in real-time
 - **Nano-Editor 2050** - Full-featured text editor with:
@@ -34,6 +44,14 @@ Complete file management with an integrated nano-editor:
   - Upload/download with base64 encoding
   - Copy, cut, paste between locations
   - Drag-and-drop metaphor navigation
+- **🎯 Smart Auto-Install** - Drag files from your laptop and auto-install:
+  - `.deb` - Debian packages (auto-runs dpkg)
+  - `.rpm` - RPM packages (auto-runs rpm)
+  - `.AppImage` - Makes executable automatically
+  - `.sh` - Shell scripts (makes executable and runs)
+  - `.tar.gz`, `.tgz` - Auto-extracts tarballs
+  - `.zip` - Auto-extracts ZIP archives
+  - `.py` - Python packages (runs pip install)
 
 ### 🎮 **Total System Control**
 God-mode access to everything on your servers:
@@ -133,7 +151,7 @@ Quantum-grade terminal UI with modes:
 ### Prerequisites
 ```bash
 # Ubuntu/Debian
-sudo apt-get install -y g++ libasio-dev nlohmann-json3-dev libncurses-dev
+sudo apt-get install -y g++ libasio-dev nlohmann-json3-dev libncurses-dev libwebsocketpp-dev
 
 # For full functionality on servers
 sudo apt-get install -y systemd docker.io  # optional
@@ -152,7 +170,7 @@ The build script compiles both components:
 ## 🎮 Usage
 
 ### Server Deployment
-On each server:
+On **each server** you want to manage:
 ```bash
 # Start the quantum server
 ./server
@@ -163,8 +181,11 @@ sudo systemctl start servercontrol
 ```
 
 The server will:
-- Start HTTP API on port 8080
-- Start UDP discovery on port 8081
+- Start HTTP API on port **8080**
+- Start UDP discovery responder on port **8081**
+- Start **WebSocket server on port 8082** ⚡ NEW!
+- Enable **live terminal streaming** ⚡ NEW!
+- Monitor CPU and send **alerts when > 90%** ⚡ NEW!
 - Create `./storage/` directory for file management
 - Report system metrics in real-time
 
@@ -174,6 +195,12 @@ On your management laptop:
 cd control
 ./control
 ```
+
+The control will:
+- **Automatically discover all servers** on your local network (e.g., 10.92.32.x:8080, 192.168.1.x:8080)
+- Scan via UDP broadcast on port 8081
+- Connect to discovered servers instantly
+- No manual IP configuration needed!
 
 ### Navigation Guide
 

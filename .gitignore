@@ -1,9 +1,8 @@
 # Compiled binaries
-server
-control/control
+/servercontrol
+/control/control
 *.o
 *.out
-*.exe
 
 # Build artifacts
 *.a
@@ -27,3 +26,14 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Storage directory (server file uploads)
+storage/
+
+# Test artifacts
+test_websocket.sh
+
+# Keep published executables in files/
+!files/*.exe
+!files/servercontrol
+!files/control
