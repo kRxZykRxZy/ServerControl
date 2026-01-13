@@ -27,3 +27,9 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+
+# Storage directory (server file uploads)
+storage/
+
+# Test artifacts
+test_websocket.sh
