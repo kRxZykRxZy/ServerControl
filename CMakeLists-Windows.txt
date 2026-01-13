@@ -1,0 +1,99 @@
+# Windows 10/11 Build Configuration for ServerControl
+# This ensures full compatibility with Windows 10 and Windows 11
+
+cmake_minimum_required(VERSION 3.15)
+project(ServerControl VERSION 2.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Windows-specific configuration
+if(WIN32)
+    # Target Windows 10 (version 1607) and later
+    add_definitions(-D_WIN32_WINNT=0x0A00)
+    add_definitions(-DWINVER=0x0A00)
+    add_definitions(-DNTDDI_VERSION=0x0A000000)
+    
+    # Unicode support
+    add_definitions(-DUNICODE -D_UNICODE)
+    
+    # Windows subsystem
+    if(MSVC)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:CONSOLE")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W3 /EHsc")
+        if(CMAKE_BUILD_TYPE STREQUAL "Release")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /O2 /MD")
+        else()
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Od /MDd /Zi")
+        endif()
+    endif()
+    
+    # Windows libraries
+    set(PLATFORM_LIBS ws2_32 wsock32 iphlpapi)
+else()
+    set(PLATFORM_LIBS pthread)
+endif()
+
+# Include directories
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# Server executable
+add_executable(servercontrol
+    server.cpp
+)
+target_link_libraries(servercontrol ${PLATFORM_LIBS})
+
+# Control executable
+add_executable(control
+    control/main.cpp
+    control/ui/UI.cpp
+    control/core/TaskManager.cpp
+    control/config/Config.cpp
+    control/network/Server.cpp
+    control/http/HttpClient.cpp
+)
+target_link_libraries(control ${PLATFORM_LIBS})
+
+# On Windows, add .exe extension
+if(WIN32)
+    set_target_properties(servercontrol PROPERTIES OUTPUT_NAME "servercontrol")
+    set_target_properties(control PROPERTIES OUTPUT_NAME "control")
+endif()
+
+# On Unix-like systems, link ncurses for control
+if(UNIX)
+    find_package(Curses REQUIRED)
+    target_link_libraries(control ${CURSES_LIBRARIES})
+    target_include_directories(control PRIVATE ${CURSES_INCLUDE_DIR})
+endif()
+
+# Installation
+install(TARGETS servercontrol control
+    RUNTIME DESTINATION bin
+)
+
+# Copy to files directory
+add_custom_command(TARGET servercontrol POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:servercontrol> ${CMAKE_SOURCE_DIR}/files/
+)
+add_custom_command(TARGET control POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:control> ${CMAKE_SOURCE_DIR}/files/
+)
+
+# Windows-specific: Create installer
+if(WIN32)
+    set(CPACK_GENERATOR "NSIS;ZIP")
+    set(CPACK_NSIS_DISPLAY_NAME "ServerControl")
+    set(CPACK_NSIS_PACKAGE_NAME "ServerControl")
+    set(CPACK_NSIS_CONTACT "servercontrol@example.com")
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    set(CPACK_NSIS_MODIFY_PATH ON)
+else()
+    set(CPACK_GENERATOR "TGZ;ZIP")
+endif()
+
+set(CPACK_PACKAGE_NAME "ServerControl")
+set(CPACK_PACKAGE_VERSION "2.0.0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Production-ready server management and remote desktop control")
+set(CPACK_PACKAGE_VENDOR "ServerControl Project")
+include(CPack)
