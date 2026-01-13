@@ -124,6 +124,7 @@ struct Task {
     std::string id;
     std::string command;
     std::string output;
+    std::string current_dir = "/root";  // Track current working directory
     std::atomic<bool> running{true};
     std::thread thread;
     
@@ -132,6 +133,7 @@ struct Task {
         : id(std::move(other.id))
         , command(std::move(other.command))
         , output(std::move(other.output))
+        , current_dir(std::move(other.current_dir))
         , running(other.running.load())
         , thread(std::move(other.thread))
     {}
@@ -141,6 +143,7 @@ struct Task {
             id = std::move(other.id);
             command = std::move(other.command);
             output = std::move(other.output);
+            current_dir = std::move(other.current_dir);
             running.store(other.running.load());
             thread = std::move(other.thread);
         }
@@ -176,7 +179,42 @@ Stats getStats() {
 }
 
 void runTask(Task& t) {
-    FILE* pipe = popen(t.command.c_str(), "r");
+    // Handle cd commands specially to track directory changes
+    std::string cmd = t.command;
+    if (cmd.find("cd ") == 0) {
+        // Extract directory from cd command
+        std::string new_dir = cmd.substr(3);
+        // Trim whitespace
+        new_dir.erase(0, new_dir.find_first_not_of(" \t\n\r\f\v"));
+        new_dir.erase(new_dir.find_last_not_of(" \t\n\r\f\v") + 1);
+        
+        // Expand relative paths
+        if (new_dir == "~" || new_dir.find("~/") == 0) {
+            new_dir = std::string(getenv("HOME") ? getenv("HOME") : "/root") + new_dir.substr(1);
+        } else if (new_dir[0] != '/') {
+            // Relative path
+            new_dir = t.current_dir + "/" + new_dir;
+        }
+        
+        t.current_dir = new_dir;
+        t.running = false;
+        
+        // Send directory change notification
+        json dir_msg = {
+            {"type", "dir_change"},
+            {"task_id", t.id},
+            {"directory", t.current_dir}
+        };
+        broadcast_ws(dir_msg.dump());
+        
+        json complete_msg = {{"type", "task_complete"}, {"task_id", t.id}, {"exit_code", 0}};
+        broadcast_ws(complete_msg.dump());
+        return;
+    }
+    
+    // Execute command in current directory
+    std::string full_cmd = "cd " + t.current_dir + " && " + cmd;
+    FILE* pipe = popen(full_cmd.c_str(), "r");
     if(!pipe){ 
         t.running=false; 
         json msg = {{"type", "task_complete"}, {"task_id", t.id}, {"exit_code", -1}};
@@ -184,8 +222,13 @@ void runTask(Task& t) {
         return; 
     }
     
-    // Send task started event
-    json start_msg = {{"type", "task_start"}, {"task_id", t.id}, {"command", t.command}};
+    // Send task started event with current directory
+    json start_msg = {
+        {"type", "task_start"}, 
+        {"task_id", t.id}, 
+        {"command", t.command},
+        {"current_dir", t.current_dir}
+    };
     broadcast_ws(start_msg.dump());
     
     char buffer[128];
@@ -198,6 +241,7 @@ void runTask(Task& t) {
             {"type", "task_output"}, 
             {"task_id", t.id}, 
             {"output", output_chunk},
+            {"current_dir", t.current_dir},
             {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()
             ).count()}
