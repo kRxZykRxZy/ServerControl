@@ -1,0 +1,51 @@
+# Build Windows executables and upload them as artifacts
+# Trigger: push to main and manual workflow_dispatch
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build on Windows and upload EXE artifacts
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC (ensure Visual Studio tools are on PATH)
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Configure CMake
+        run: |
+          mkdir build
+          cd build
+          cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Release)
+        run: |
+          cd build
+          cmake --build . --config Release -- /m
+
+      - name: Locate built EXEs
+        id: find_exes
+        run: |
+          cd build
+          # Collect all exe files under the build tree
+          $exes = Get-ChildItem -Path . -Recurse -Filter *.exe | ForEach-Object FullName
+          if (-not $exes) {
+            Write-Host "No EXEs found"
+            echo "::set-output name=paths::"
+          } else {
+            $list = $exes -join "`n"
+            echo "::set-output name=paths::$list"
+            Write-Host "Found exes:`n$list"
+          }
+
+      - name: Upload EXE artifacts
+        if: steps.find_exes.outputs.paths != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: servercontrol-exes
+          path: |
+            build/**/*.exe
