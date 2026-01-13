@@ -68,8 +68,10 @@ $winFlags = "-D_WIN32_WINNT=0x0A00", "-DWINVER=0x0A00", "-DNTDDI_VERSION=0x0A000
 Write-Host "[1/2] Building server for Windows 10/11..." -ForegroundColor Yellow
 Write-Host ""
 
+Set-Location server
+
 if ($compiler -eq "msvc") {
-    $flags = "/EHsc", "/std:c++17", "/I.\include"
+    $flags = "/EHsc", "/std:c++17", "/I..\include"
     $flags += $winFlags
     
     if ($Configuration -eq "Release") {
@@ -78,9 +80,10 @@ if ($compiler -eq "msvc") {
         $flags += "/Od", "/MDd", "/Zi"
     }
     
-    & cl.exe $flags /Fe:files\servercontrol.exe server.cpp /link ws2_32.lib wsock32.lib iphlpapi.lib 2>&1 | Out-Null
+    & cl.exe $flags /Fe:..\files\servercontrol.exe main.cpp `
+        /link ws2_32.lib wsock32.lib iphlpapi.lib 2>&1 | Out-Null
 } else {
-    $flags = "-std=c++17", "-pthread", "-I./include"
+    $flags = "-std=c++17", "-pthread", "-I../include"
     $flags += $winFlags
     
     if ($Configuration -eq "Release") {
@@ -89,8 +92,11 @@ if ($compiler -eq "msvc") {
         $flags += "-g"
     }
     
-    & g++.exe $flags server.cpp -o files/servercontrol.exe -lws2_32 -lwsock32 -liphlpapi 2>&1 | Out-Null
+    & g++.exe $flags main.cpp -o ../files/servercontrol.exe `
+        -lws2_32 -lwsock32 -liphlpapi 2>&1 | Out-Null
 }
+
+Set-Location ..
 
 if ($LASTEXITCODE -eq 0) {
     $size = (Get-Item "files\servercontrol.exe").Length / 1MB

@@ -28,20 +28,27 @@ if (Get-Command cl.exe -ErrorAction SilentlyContinue) {
 Write-Host "Detected compiler: $compilerName" -ForegroundColor Green
 Write-Host ""
 
-# Build server
-Write-Host "[1/2] Building server..." -ForegroundColor Yellow
+# Build server (modular - all code in server/main.cpp)
+Write-Host "[1/2] Building server (modular)..." -ForegroundColor Yellow
+
+# Create files directory
+New-Item -ItemType Directory -Force -Path "files" | Out-Null
+
+Set-Location server
 
 if ($compiler -eq "msvc") {
-    cl.exe /EHsc /std:c++17 /MD /O2 /I.\include `
-        /Fe:servercontrol.exe `
-        server.cpp `
-        /link ws2_32.lib 2>&1 | Out-Null
+    cl.exe /EHsc /std:c++17 /MD /O2 /I..\include `
+        /Fe:..\files\servercontrol.exe `
+        main.cpp `
+        /link ws2_32.lib wsock32.lib iphlpapi.lib 2>&1 | Out-Null
 } else {
-    g++.exe -std=c++17 -O2 -pthread -I./include `
-        server.cpp `
-        -o servercontrol.exe `
-        -lws2_32 2>&1 | Out-Null
+    g++.exe -std=c++17 -O2 -pthread -I../include `
+        main.cpp `
+        -o ../files/servercontrol.exe `
+        -lws2_32 -lwsock32 -liphlpapi 2>&1 | Out-Null
 }
+
+Set-Location ..
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Server build failed" -ForegroundColor Red
@@ -53,11 +60,14 @@ Write-Host "✓ Server built successfully" -ForegroundColor Green
 # Build control
 Write-Host "[2/2] Building control..." -ForegroundColor Yellow
 
+# Create files directory
+New-Item -ItemType Directory -Force -Path "files" | Out-Null
+
 Set-Location control
 
 if ($compiler -eq "msvc") {
     cl.exe /EHsc /std:c++17 /MD /O2 /I..\include `
-        /Fe:control.exe `
+        /Fe:..\files\control.exe `
         main.cpp `
         ui\UI.cpp `
         core\TaskManager.cpp `
@@ -73,7 +83,7 @@ if ($compiler -eq "msvc") {
         config/Config.cpp `
         network/Server.cpp `
         http/HttpClient.cpp `
-        -o control.exe `
+        -o ../files/control.exe `
         -lws2_32 2>&1 | Out-Null
 }
 

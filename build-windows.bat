@@ -43,16 +43,18 @@ if not exist files mkdir files
 echo [1/3] Building server for Windows 10/11...
 echo.
 
-REM Server compilation with Windows 10/11 targeting
+REM Server compilation with Windows 10/11 targeting (MODULAR)
+cd server
 cl.exe /EHsc /std:c++17 /MD /O2 ^
     /D_WIN32_WINNT=0x0A00 ^
     /DWINVER=0x0A00 ^
     /DNTDDI_VERSION=0x0A000000 ^
     /DUNICODE /D_UNICODE ^
-    /I.\include ^
-    /Fe:files\servercontrol.exe ^
-    server.cpp ^
+    /I..\include ^
+    /Fe:..\files\servercontrol.exe ^
+    main.cpp ^
     /link ws2_32.lib wsock32.lib iphlpapi.lib
+cd ..
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

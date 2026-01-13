@@ -3,7 +3,6 @@
 /control/control
 *.o
 *.out
-*.exe
 
 # Build artifacts
 *.a
@@ -33,3 +32,8 @@ storage/
 
 # Test artifacts
 test_websocket.sh
+
+# Keep published executables in files/
+!files/*.exe
+!files/servercontrol
+!files/control
