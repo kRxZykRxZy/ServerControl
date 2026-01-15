@@ -111,7 +111,7 @@ void Server::Send(connection_hdl hdl, const std::string& message) {
 }
 
 size_t Server::GetConnectionCount() const {
-    std::lock_guard<std::mutex> lock(connections_mutex_);
+    std::lock_guard<std::mutex> lock(const_cast<std::mutex&>(connections_mutex_));
     return connections_.size();
 }
 

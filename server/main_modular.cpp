@@ -27,36 +27,53 @@ int main() {
     std::cout << "=== ServerControl 2050 - Modular Windows/Linux Server ===" << std::endl;
     std::cout << "Detecting network configuration..." << std::endl;
     
+    std::string assigned_ip;
+    
 #ifdef _WIN32
     std::cout << "Platform: Windows" << std::endl;
     
-    // Try to assign 10.125.125.x IP address on Windows
-    std::string available_ip = Platform::API::FindAvailableIP(SUBNET, 10, 254);
-    if (!available_ip.empty()) {
-        std::cout << "Found available IP: " << available_ip << std::endl;
+    // Scan 10.125.125.x subnet to find first available IP (starting from .1)
+    std::cout << "Scanning 10.125.125.x subnet for available IP..." << std::endl;
+    assigned_ip = Platform::API::FindAvailableIP(SUBNET, 1, 254);
+    
+    if (!assigned_ip.empty()) {
+        std::cout << "✓ Found available IP: " << assigned_ip << std::endl;
         
-        // Try to assign the IP
-        if (Platform::API::AssignIPAddress(available_ip, "255.255.255.0")) {
-            std::cout << "✓ Assigned IP address: " << available_ip << std::endl;
+        // Try to assign the IP using netsh
+        std::cout << "Attempting to assign IP via netsh..." << std::endl;
+        if (Platform::API::AssignIPAddress(assigned_ip, "255.255.255.0")) {
+            std::cout << "✓ Successfully assigned IP address: " << assigned_ip << std::endl;
+            std::cout << "  Server will bind to this IP for all services" << std::endl;
         } else {
-            std::cout << "⚠ Failed to assign IP address (requires admin privileges)" << std::endl;
-            std::cout << "  Please run: netsh interface ip add address \"Ethernet\" " 
-                      << available_ip << " 255.255.255.0" << std::endl;
+            std::cout << "⚠ Failed to assign IP address (requires administrator privileges)" << std::endl;
+            std::cout << "  To manually assign, run as Administrator:" << std::endl;
+            std::cout << "  netsh interface ip add address \"Ethernet\" " 
+                      << assigned_ip << " 255.255.255.0" << std::endl;
+            std::cout << "\nFalling back to existing IP..." << std::endl;
+            assigned_ip = ""; // Clear to use fallback
         }
     } else {
-        std::cout << "⚠ No available IP in " << SUBNET << "x range" << std::endl;
+        std::cout << "⚠ No available IP in 10.125.125.x range (all IPs 1-254 are in use)" << std::endl;
+        std::cout << "  Falling back to existing network configuration" << std::endl;
     }
 #else
     std::cout << "Platform: Linux" << std::endl;
+    std::cout << "Note: Automatic IP assignment is currently Windows-only" << std::endl;
+    std::cout << "      On Linux, manually configure IP with: sudo ip addr add 10.125.125.x/24 dev eth0" << std::endl;
 #endif
     
-    // Get local IP
-    std::string bind_ip = Platform::API::GetLocalIP();
+    // Determine bind IP - use assigned IP if successful, otherwise use existing
+    std::string bind_ip = assigned_ip.empty() ? Platform::API::GetLocalIP() : assigned_ip;
     std::string hostname = Platform::API::GetHostname();
     
     std::cout << "\n✓ Network Configuration:" << std::endl;
     std::cout << "  Hostname:       " << hostname << std::endl;
     std::cout << "  Bind IP:        " << bind_ip << std::endl;
+    if (!assigned_ip.empty()) {
+        std::cout << "  IP Assignment:  Automatic (10.125.125.x)" << std::endl;
+    } else {
+        std::cout << "  IP Assignment:  Using existing network configuration" << std::endl;
+    }
     std::cout << "  HTTP API:       " << bind_ip << ":" << http_port << std::endl;
     std::cout << "  UDP Discovery:  " << bind_ip << ":" << discovery_port << std::endl;
     
