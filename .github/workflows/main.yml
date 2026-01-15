@@ -14,11 +14,11 @@ jobs:
       - name: Setup MSVC (ensure Visual Studio tools are on PATH)
         uses: microsoft/setup-msbuild@v1
 
-      - name: Configure CMake
+      - name: Configure
         run: |
           mkdir build
           cd build
-          sh ../build-all.sh
+          sh ../build-modular.sh
 
       - name: Build (Release)
         run: |
