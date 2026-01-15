@@ -10,7 +10,7 @@ mkdir -p files
 # Build modular server
 echo "Building modular server..."
 cd server
-g++ -std=c++17 -pthread -DASIO_STANDALONE -I../include \
+g++ -std=c++17 -pthread -DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_THREAD_ -I../include \
     main_modular.cpp \
     platform/PlatformAbstraction.cpp \
     websocket/WebSocketManager.cpp \

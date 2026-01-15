@@ -5,7 +5,7 @@ if not exist files mkdir files
 
 echo Building modular server...
 cd server
-g++ -std=c++17 -DASIO_STANDALONE -D_WIN32_WINNT=0x0601 -I../include ^
+g++ -std=c++17 -DASIO_STANDALONE -D_WEBSOCKETPP_CPP11_THREAD_ -D_WIN32_WINNT=0x0601 -I../include ^
     main_modular.cpp ^
     platform/PlatformAbstraction.cpp ^
     websocket/WebSocketManager.cpp ^
