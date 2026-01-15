@@ -2,6 +2,32 @@
 
 A futuristic, next-generation server management system with **real-time WebSocket streaming**, AI-powered auto-discovery, holographic file systems, and complete remote system control capabilities.
 
+## 🆕 **LATEST UPDATE: Full Windows/Linux Modularization** ⚡
+
+### **Automatic 10.125.125.x IP Assignment** 
+On Windows, the server now **automatically assigns itself a unique IP** in the 10.125.125.x range:
+- 🔍 Scans 10.125.125.1 through .254 to find first available IP
+- ⚙️ Uses `netsh` to assign the IP automatically on startup
+- 🎯 First server gets .1, second gets .2, third gets .3, etc.
+- 🔄 Falls back gracefully if admin privileges unavailable
+- 🌐 Control app scans entire 10.125.125.x subnet to discover all servers
+
+### **Four WebSocket Servers Per Host**
+Each server instance now runs **4 specialized WebSocket servers**:
+- 🎮 **Main Control** (port 2040) - Commands, task execution
+- 📊 **Stats/Monitoring** (port 2041) - Real-time CPU/RAM, alerts
+- 📁 **File Operations** (port 2042) - File streaming, sync
+- 🖥️ **Remote Desktop** (port 2043) - Screen sharing, input
+
+### **Fully Modular Architecture**
+Complete platform abstraction for Windows/Linux:
+- ✅ Cross-platform stats (Windows: WinAPI, Linux: /proc)
+- ✅ Cross-platform commands (Windows: _popen, Linux: popen)
+- ✅ Modular design (Platform, WebSocket, Stats, Tasks, Files)
+- ✅ **Codeberg-inspired UI colors** 🎨
+
+See [MODULAR_IMPLEMENTATION.md](MODULAR_IMPLEMENTATION.md) for details.
+
 ## 🚀 Overview
 
 ServerControl 2050 is not just a server management tool - it's a complete quantum-grade orchestration platform that gives you god-mode access to your entire server infrastructure through an intuitive terminal interface with 2050-era design aesthetics. **Now with live WebSocket streaming for millisecond-precision monitoring!**
@@ -9,6 +35,7 @@ ServerControl 2050 is not just a server management tool - it's a complete quantu
 ## ✨ Revolutionary Features
 
 ### 🌐 **Live WebSocket Streaming** ⚡ NEW!
+- **Four specialized WebSocket channels** - Dedicated streams for control, stats, files, and desktop
 - **Real-time terminal output** - See command execution live as it happens, just like Vercel logs
 - **Millisecond-precision timestamps** - Every output chunk timestamped to the millisecond
 - **Live stats broadcasting** - CPU, RAM, and system metrics updated every second
@@ -18,14 +45,16 @@ ServerControl 2050 is not just a server management tool - it's a complete quantu
 
 ### 🔍 **Neural Auto-Discovery**
 - Quantum-instant server detection via UDP broadcast
+- **Scans 10.125.125.x subnet automatically** - Discovers all servers with assigned IPs
 - **Scans entire local network automatically**
 - Zero configuration required
 - Self-organizing network topology
-- Discovers servers at any IP (e.g., 10.92.32.x:8080)
+- Discovers all 4 WebSocket ports per server
 - Automatic failover to manual config
 
 ### 🎨 **Futuristic Holographic UI**
 - Quantum-styled terminal interface with Unicode box-drawing
+- **Codeberg color palette** - Professional blue/green/orange/red scheme
 - Real-time biometric monitoring (CPU/RAM with color-coded alerts)
 - Neural network status indicators
 - Animated progress bars and live stats

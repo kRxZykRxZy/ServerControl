@@ -21,12 +21,13 @@ void UI::run() {
     curs_set(0); // Hide cursor
     timeout(1000); // 1 second timeout for getch
     
-    // Initialize color pairs
-    init_pair(1, COLOR_GREEN, COLOR_BLACK);   // Online/good
-    init_pair(2, COLOR_RED, COLOR_BLACK);     // Error/critical
-    init_pair(3, COLOR_YELLOW, COLOR_BLACK);  // Warning
-    init_pair(4, COLOR_CYAN, COLOR_BLACK);    // Info
-    init_pair(5, COLOR_WHITE, COLOR_BLUE);    // Selected
+    // Initialize color pairs (Codeberg-inspired palette)
+    // Codeberg uses: Primary Blue, Success Green, Warning Orange, Error Red, Info Teal
+    init_pair(1, COLOR_GREEN, COLOR_BLACK);   // Success/Online (Codeberg green #21ba45)
+    init_pair(2, COLOR_RED, COLOR_BLACK);     // Error/Critical (Codeberg red #db2828)
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);  // Warning (Codeberg orange approximation)
+    init_pair(4, COLOR_CYAN, COLOR_BLACK);    // Info/Primary (Codeberg teal/blue #00b5ad/#2185d0)
+    init_pair(5, COLOR_WHITE, COLOR_BLUE);    // Selected (Codeberg primary blue)
 
     while (true) {
         tm.refreshTasks();
