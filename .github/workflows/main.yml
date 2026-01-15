@@ -16,7 +16,7 @@ jobs:
 
       - name: Build
         run: |
-          sh ../build_modular.sh
+          sh build_modular.sh
 
       - name: Locate built EXEs
         id: find_exes
