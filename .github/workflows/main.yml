@@ -14,20 +14,13 @@ jobs:
       - name: Setup MSVC (ensure Visual Studio tools are on PATH)
         uses: microsoft/setup-msbuild@v1
 
-      - name: Configure
+      - name: Build
         run: |
-          mkdir build
-          cd build
           sh ../build_modular.sh
-
-      - name: Build (Release)
-        run: |
-          cd build
 
       - name: Locate built EXEs
         id: find_exes
         run: |
-          cd build
           # Collect all exe files under the build tree
           $exes = Get-ChildItem -Path . -Recurse -Filter *.exe | ForEach-Object FullName
           if (-not $exes) {
@@ -45,4 +38,4 @@ jobs:
         with:
           name: servercontrol-exes
           path: |
-            build/**/*.exe
+            /**/*.exe
